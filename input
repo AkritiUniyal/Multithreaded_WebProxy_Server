@@ -1,0 +1,12 @@
+curl -x localhost:8080 http://google.com &
+wait
+curl -x localhost:8080 http://google.com &
+curl -x localhost:8080 http://example.net &
+curl -x localhost:8080 http://google.com &
+wait
+curl -x localhost:8080 http://example.com &
+curl -x localhost:8080 http://google.com &
+curl -x localhost:8080 http://example.org &
+curl -x localhost:8080 http://example.net &
+curl -x localhost:8080 http://example.edu &
+wait
