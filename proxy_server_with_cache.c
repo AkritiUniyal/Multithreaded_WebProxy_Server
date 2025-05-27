@@ -14,10 +14,14 @@
 #define CACHE_LIMIT 3
 #define a 0.5
 #define b 0.5
+const char *blocked_ips[] = {
+    "192.168.1.5",
+    "10.0.0.100"
+};
 
 pthread_mutex_t lock;
 int global_time = 0;
-
+                        
 struct arc_cache
 {
     char url[1000];
@@ -175,6 +179,17 @@ void print_cache()
     }
     printf("---------------------------------------------------------\n\n");
 }
+
+
+int is_blocked(const char *ip) {
+
+    for (int i = 0; i < num_blocked_ips; i++) {
+        if (strcmp(ip, blocked_ips[i]) == 0)
+            return 1;  
+    }
+    return 0;  
+}
+
 
 void *handle_request(void *arg)
 {
@@ -334,6 +349,16 @@ int main()
         }
 
         *client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+
+        if (is_blocked(client_ip)) {
+            printf("Blocked IP: %s\n", client_ip);
+            close(client_sock);
+            continue;
+        }
+
         if (*client_socket < 0)
         {
             perror("[ERROR] Accept failed");
