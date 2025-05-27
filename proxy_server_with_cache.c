@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <netdb.h>
+#include <jansson.h>
 
 #define PORT 8080
 #define BUFFER_SIZE 1000000
@@ -18,6 +19,7 @@ const char *blocked_ips[] = {
     "192.168.1.5",
     "10.0.0.100"
 };
+const int num_blocked_ips = sizeof(blocked_ips) / sizeof(blocked_ips[0]);
 
 pthread_mutex_t lock;
 int global_time = 0;
@@ -190,9 +192,39 @@ int is_blocked(const char *ip) {
     return 0;  
 }
 
+void send_json_response(int sock, const char *data, int size, int cache_hit, pthread_t tid) {
+    json_t *root = json_object();
+    char tid_str[20];
+    snprintf(tid_str, sizeof(tid_str), "%lu", (unsigned long)tid);
+    json_object_set_new(root, "thread", json_string(tid_str));
+    json_object_set_new(root, "cache", json_boolean(cache_hit));
+    json_object_set_new(root, "data", json_stringn(data, size));
+    
+    // Add cache state
+    json_t *cache = json_array();
+    struct arc_cache *curr = head;
+    while(curr) {
+        json_t *entry = json_object();
+        json_object_set_new(entry, "url", json_string(curr->url));
+        json_object_set_new(entry, "size", json_integer(curr->size));
+        json_object_set_new(entry, "score", json_real(curr->score));
+        json_object_set_new(entry, "freq", json_real(curr->freq));
+        json_array_append_new(cache, entry);
+        curr = curr->next;
+    }
+    json_object_set_new(root, "cache_state", cache);
+    
+    char *json_str = json_dumps(root, JSON_COMPACT);
+    send(sock, json_str, strlen(json_str), 0);
+    
+    json_decref(root);
+    free(json_str);
+}
+
 
 void *handle_request(void *arg)
 {
+     pthread_t tid = pthread_self();
     printf("[DEBUG] Thread ID: %lu\n", (unsigned long)pthread_self());
     sleep(1);
     int client_socket = *(int *)arg;
@@ -219,7 +251,7 @@ void *handle_request(void *arg)
     if (cached)
     {
         printf("[DEBUG] Cache hit for URL: %s\n", url);
-        send(client_socket, cached->data, cached->size, 0);
+        send_json_response(client_socket, cached->data, cached->size, 1, tid);
         print_cache();
         close(client_socket);
         return NULL;
@@ -284,18 +316,17 @@ void *handle_request(void *arg)
     if (cached)
     {
         printf("[DEBUG] Cache inserted by another thread, using it.\n");
-        send(client_socket, cached->data, cached->size, 0);
+        send_json_response(client_socket, cached->data, cached->size, 1, tid);
         print_cache();
         close(server_socket);
         close(client_socket);
         return NULL;
     }
 
-    // ✅ Safe to add to cache
-    send(client_socket, response, total_size, 0);
     printf("[DEBUG] Sending response to client\n");
 
     add_cache_element(response, total_size, url, elapsed_time);
+    send_json_response(client_socket, response, total_size, 0, tid);
     print_cache();
 
     close(server_socket);
@@ -355,7 +386,8 @@ int main()
 
         if (is_blocked(client_ip)) {
             printf("Blocked IP: %s\n", client_ip);
-            close(client_sock);
+            close(*client_socket);
+            free(client_socket);
             continue;
         }
 
