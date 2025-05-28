@@ -17,7 +17,7 @@
 #define b 0.5
 const char *blocked_ips[] = {
     "192.168.1.5",
-    "10.0.0.100"
+    "10.0.0.100",
 };
 const int num_blocked_ips = sizeof(blocked_ips) / sizeof(blocked_ips[0]);
 
@@ -390,7 +390,7 @@ int main()
             free(client_socket);
             continue;
         }
-
+        printf("[DEBUG] New connection from %s\n", client_ip);
         if (*client_socket < 0)
         {
             perror("[ERROR] Accept failed");
